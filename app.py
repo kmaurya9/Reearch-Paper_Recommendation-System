@@ -1,3 +1,4 @@
+from sentence_transformers import SentenceTransformer
 import streamlit as st
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -15,31 +16,31 @@ def load_data():
     return df
 
 @st.cache_resource
-def build_models(df):
-    tfidf_vec = TfidfVectorizer(max_features=5000, stop_words="english", ngram_range=(1, 2))
-    count_vec = CountVectorizer(max_features=5000, stop_words="english", ngram_range=(1, 2))
-    tfidf_matrix = tfidf_vec.fit_transform(df["abstract"])
-    count_matrix = count_vec.fit_transform(df["abstract"])
-    return tfidf_vec, count_vec, tfidf_matrix, count_matrix
+def build_bert_model():
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    return model
+
+@st.cache_data
+def build_embeddings(_model, abstracts):
+    return _model.encode(abstracts, show_progress_bar=True, batch_size=256)
 
 df = load_data()
-tfidf_vec, count_vec, tfidf_matrix, count_matrix = build_models(df)
+bert_model = build_bert_model()
+bert_embeddings = build_embeddings(bert_model, df["abstract"].tolist())
 
 st.title("Research Paper Recommendation System")
-st.write("Search across 100,000+ arXiv research papers")
+st.write("Search across 100,000+ arXiv research papers using BERT semantic search")
 
 query = st.text_input("Enter your research interest:")
 
 if query:
-    tfidf_scores = cosine_similarity(tfidf_vec.transform([query]), tfidf_matrix).flatten()
-    count_scores = cosine_similarity(count_vec.transform([query]), count_matrix).flatten()
-    mixed_scores = (tfidf_scores + count_scores) / 2
-
-    top_indices = mixed_scores.argsort()[-5:][::-1]
+    query_embedding = bert_model.encode([query])
+    scores = cosine_similarity(query_embedding, bert_embeddings).flatten()
+    top_indices = scores.argsort()[-5:][::-1]
 
     st.subheader(f"Top 5 results for: '{query}'")
     for i in top_indices:
         st.subheader(df["title"][i])
-        st.write(f"**Score:** {mixed_scores[i]:.4f} | **Category:** {df['categories'][i]}")
+        st.write(f"**Score:** {scores[i]:.4f} | **Category:** {df['categories'][i]}")
         st.write(df["abstract"][i][:300])
         st.divider()
